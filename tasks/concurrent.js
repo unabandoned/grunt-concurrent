@@ -1,11 +1,82 @@
 'use strict';
 const os = require('os');
-const padStream = require('pad-stream');
-const async = require('async');
-const arrify = require('arrify');
-const indentString = require('indent-string');
+const {Transform} = require('stream');
+const {StringDecoder} = require('string_decoder');
 
 const subprocesses = [];
+
+// Indent every non-blank line (what indent-string did)
+const indentString = (string, count) => string.replace(/^(?!\s*$)/gm, ' '.repeat(count));
+
+// Indent a stream line by line (what pad-stream did): every line, including
+// blank ones, comes out indented and newline-terminated
+const padStream = count => {
+	const indent = ' '.repeat(count);
+	const decoder = new StringDecoder('utf8');
+	let rest = '';
+	return new Transform({
+		transform(chunk, encoding, callback) {
+			const lines = (rest + decoder.write(chunk)).split(/\r?\n/);
+			rest = lines.pop();
+			callback(null, lines.map(line => indent + line + '\n').join(''));
+		},
+		flush(callback) {
+			rest += decoder.end();
+			callback(null, rest ? indent + rest + '\n' : '');
+		}
+	});
+};
+
+// Run `iteratee` over `items` with at most `limit` in flight; stop starting new
+// ones after the first error (what async.eachLimit did)
+const eachLimit = (items, limit, iteratee, callback) => {
+	let index = 0;
+	let running = 0;
+	let finished = false;
+
+	const launch = () => {
+		while (!finished && running < limit && index < items.length) {
+			const item = items[index++];
+			let called = false;
+			running++;
+			iteratee(item, error => {
+				if (called) {
+					return;
+				}
+
+				called = true;
+				running--;
+				if (finished) {
+					return;
+				}
+
+				if (error) {
+					finished = true;
+					callback(error);
+				} else if (index === items.length && running === 0) {
+					finished = true;
+					callback();
+				} else {
+					launch();
+				}
+			});
+		}
+	};
+
+	if (items.length === 0) {
+		callback();
+	} else {
+		launch();
+	}
+};
+
+const toArray = value => {
+	if (value === null || value === undefined) {
+		return [];
+	}
+
+	return Array.isArray(value) ? value : [value];
+};
 
 module.exports = grunt => {
 	grunt.registerMultiTask('concurrent', 'Run grunt tasks concurrently', function () {
@@ -16,7 +87,7 @@ module.exports = grunt => {
 			indent: true
 		});
 
-		const tasks = this.data.tasks || this.data;
+		const tasks = toArray(this.data.tasks || this.data);
 		const flags = grunt.option.flags();
 
 		if (
@@ -35,10 +106,10 @@ module.exports = grunt => {
 			);
 		}
 
-		async.eachLimit(tasks, options.limit, (task, next) => {
+		eachLimit(tasks, options.limit, (task, next) => {
 			const subprocess = grunt.util.spawn({
 				grunt: true,
-				args: arrify(task).concat(flags),
+				args: toArray(task).concat(flags),
 				opts: {
 					stdio: [
 						'ignore',

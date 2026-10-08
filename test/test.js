@@ -1,74 +1,91 @@
 'use strict';
-/* eslint-env mocha */
+const {describe, it, before} = require('node:test');
 const {strict: assert} = require('assert');
 const fs = require('fs');
 const path = require('path');
-const {exec} = require('child_process');
-const pathExists = require('path-exists');
-const spawn = require('cross-spawn');
+const {spawnSync} = require('child_process');
+
+const root = path.join(__dirname, '..');
+const tmp = path.join(__dirname, 'tmp');
+const gruntBin = require.resolve('grunt/bin/grunt');
+
+const grunt = (...args) => spawnSync(process.execPath, [gruntBin, ...args], {cwd: root, encoding: 'utf8'});
+
+const runGrunt = (...args) => {
+	const result = grunt(...args);
+	assert.equal(result.status, 0, `grunt ${args.join(' ')} failed:\n${result.stdout}${result.stderr}`);
+	return result;
+};
+
+const read = name => fs.readFileSync(path.join(tmp, name), 'utf8');
 
 describe('concurrent', () => {
+	before(() => {
+		fs.rmSync(tmp, {recursive: true, force: true});
+		runGrunt('concurrent:test', 'concurrent:testSequence');
+	});
+
 	it('runs grunt tasks successfully', () => {
-		assert(pathExists.sync(path.join(__dirname, 'tmp/1')));
-		assert(pathExists.sync(path.join(__dirname, 'tmp/2')));
-		assert(pathExists.sync(path.join(__dirname, 'tmp/3')));
+		assert(fs.existsSync(path.join(tmp, '1')));
+		assert(fs.existsSync(path.join(tmp, '2')));
+		assert(fs.existsSync(path.join(tmp, '3')));
 	});
 
 	it('runs grunt task sequence successfully', () => {
-		const file5 = fs.statSync(path.join(__dirname, 'tmp/5'));
-		const file6 = fs.statSync(path.join(__dirname, 'tmp/6'));
-		assert.ok(Date.parse(file5.ctime) < Date.parse(file6.ctime));
+		const file5 = fs.statSync(path.join(tmp, '5'));
+		const file6 = fs.statSync(path.join(tmp, '6'));
+		assert.ok(file5.ctimeMs < file6.ctimeMs);
 	});
 
-	it('forwards CLI args to grunt sub-processes', done => {
+	it('forwards CLI args to grunt sub-processes', () => {
 		const expected = '--arg1=test,--arg2';
+		runGrunt('concurrent:testargs', '--arg1=test', '--arg2');
+		assert.ok(read('args1').includes(expected));
+		assert.ok(read('args2').includes(expected));
+	});
 
-		exec('grunt concurrent:testargs ' + expected, () => {
-			const args1 = fs.readFileSync(path.join(__dirname, 'tmp/args1'), 'utf8');
-			const args2 = fs.readFileSync(path.join(__dirname, 'tmp/args2'), 'utf8');
-			assert.ok(args1.includes(expected));
-			assert.ok(args2.includes(expected));
-			done();
-		});
+	it('fails when a sub-task fails', () => {
+		const result = grunt('concurrent:fail');
+		assert.notEqual(result.status, 0);
+		assert.match(result.stdout, /testFail failed on purpose/);
+	});
+
+	it('honours the `limit` option', () => {
+		const result = runGrunt('concurrent:limited');
+		assert.match(result.stdout, /more tasks than your concurrency limit/);
+		const out = result.stdout;
+		assert.ok(out.indexOf('test2') < out.indexOf('test3'), 'with limit 1 the tasks run in order');
 	});
 
 	describe('`logConcurrentOutput` option', () => {
 		let logOutput = '';
 
-		before(done => {
-			let isDoneCalled = false;
-			const subprocess = spawn('grunt', ['concurrent:log']);
-
-			subprocess.stdout.setEncoding('utf8');
-			subprocess.stdout.on('data', data => {
-				logOutput += data;
-				subprocess.kill();
-				if (!isDoneCalled) {
-					isDoneCalled = true;
-					done();
-				}
-			});
+		before(() => {
+			logOutput = runGrunt('concurrent:log').stdout;
 		});
 
 		it('outputs concurrent logging', () => {
-			const expected = 'Running "concurrent:log" (concurrent) task';
-			assert(logOutput.includes(expected));
+			assert(logOutput.includes('Running "concurrent:log" (concurrent) task'));
+		});
+
+		it('streams sub-task output indented line by line', () => {
+			const lines = logOutput.split('\n');
+			assert.ok(lines.includes('    indent test output'));
+			assert.ok(lines.includes('    line one'));
+			assert.ok(lines.includes('    '), 'blank lines are padded too');
+			assert.ok(lines.includes('    line three'));
 		});
 	});
 
-	describe('works with supports-color lib', () => {
-		it('ensures that colors are supported by default', done => {
-			exec('grunt concurrent:colors', () => {
-				assert.equal(fs.readFileSync(path.join(__dirname, 'tmp/colors'), 'utf8'), 'true');
-				done();
-			});
+	describe('works with supports-color', () => {
+		it('ensures that colors are supported by default', () => {
+			runGrunt('concurrent:colors');
+			assert.equal(read('colors'), 'true');
 		});
 
-		it('doesn\'t support colors with --no-color option', done => {
-			exec('grunt concurrent:colors --no-color', () => {
-				assert.equal(fs.readFileSync(path.join(__dirname, 'tmp/colors'), 'utf8'), 'false');
-				done();
-			});
+		it('doesn\'t support colors with --no-color option', () => {
+			runGrunt('concurrent:colors', '--no-color');
+			assert.equal(read('colors'), 'false');
 		});
 	});
 
@@ -76,32 +93,20 @@ describe('concurrent', () => {
 		const testOutput = 'indent test output';
 		const indentedTestOutput = '    ' + testOutput;
 
-		it('indents output when true', done => {
-			exec('grunt concurrent:indentTrue', (error, stdout) => {
-				assert.ok(stdout.split('\n').includes(indentedTestOutput));
-				done();
-			});
+		it('indents output when true', () => {
+			assert.ok(runGrunt('concurrent:indentTrue').stdout.split('\n').includes(indentedTestOutput));
 		});
 
-		it('does not indent output when false', done => {
-			exec('grunt concurrent:indentFalse', (error, stdout) => {
-				assert.ok(stdout.split('\n').includes(testOutput));
-				done();
-			});
+		it('does not indent output when false', () => {
+			assert.ok(runGrunt('concurrent:indentFalse').stdout.split('\n').includes(testOutput));
 		});
 
-		it('does not indent output when false and logConcurrentOutput is true', done => {
-			exec('grunt concurrent:indentFalseConcurrentOutput', (error, stdout) => {
-				assert.ok(stdout.split('\n').includes(testOutput));
-				done();
-			});
+		it('does not indent output when false and logConcurrentOutput is true', () => {
+			assert.ok(runGrunt('concurrent:indentFalseConcurrentOutput').stdout.split('\n').includes(testOutput));
 		});
 
-		it('indents output by default', done => {
-			exec('grunt concurrent:indentDefault', (error, stdout) => {
-				assert.ok(stdout.split('\n').includes(indentedTestOutput));
-				done();
-			});
+		it('indents output by default', () => {
+			assert.ok(runGrunt('concurrent:indentDefault').stdout.split('\n').includes(indentedTestOutput));
 		});
 	});
 });

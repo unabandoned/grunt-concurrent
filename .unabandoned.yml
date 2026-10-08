@@ -1,0 +1,30 @@
+schema: 1
+
+package: "@unabandoned/grunt-concurrent"
+
+upstream:
+  repo: sindresorhus/grunt-concurrent
+  reason: "no release since 3.0.0 in June 2019"
+
+summary: >-
+  Grunt task that runs other grunt tasks concurrently in child processes,
+  with a concurrency limit, sequential groups and optional live, indented
+  output.
+
+why-forked: >-
+  CyberChef runs its dev server and config watcher side by side with it, and
+  it was abandoned while carrying four runtime dependencies, three of them
+  (arrify, indent-string, pad-stream) abandoned themselves and pad-stream
+  pulling in through2, split2 and pumpify 1.x. Each was a few lines of
+  behaviour, so the fork reimplements them with Node built-ins and has zero
+  runtime dependencies; grunt stays a peer.
+
+used-by:
+  - consumer: TheTechNetwork/CyberChef
+    purpose: >-
+      runs watch:config and webpack-dev-server:start in parallel for
+      `grunt dev` (concurrent:dev in Gruntfile.js, with logConcurrentOutput)
+
+status: active
+
+tags: [grunt, gruntplugin, concurrency, build]

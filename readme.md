@@ -2,6 +2,16 @@
 
 > Run grunt tasks concurrently
 
+> **This is a maintained fork of [grunt-concurrent][upstream], published as
+> [`@unabandoned/grunt-concurrent`][pkg].** Upstream's last release was 3.0.0
+> in 2019. The task and its options are unchanged; its four runtime
+> dependencies (`async`, `arrify`, `indent-string`, `pad-stream`) are replaced
+> with a few lines of Node.js built-ins, so it has none. It needs Node.js
+> 22.12 or newer. See [.unabandoned.yml](.unabandoned.yml).
+
+[upstream]: https://github.com/sindresorhus/grunt-concurrent
+[pkg]: https://www.npmjs.com/package/@unabandoned/grunt-concurrent
+
 <img src="screenshot.png" width="439">
 
 Running slow tasks like Coffee and Sass concurrently can potentially improve your build time significantly. This task is also useful if you need to run [multiple blocking tasks](#logconcurrentoutput) like `nodemon` and `watch` at once.
@@ -9,7 +19,13 @@ Running slow tasks like Coffee and Sass concurrently can potentially improve you
 ## Install
 
 ```sh
-npm install --save-dev grunt-concurrent
+npm install --save-dev @unabandoned/grunt-concurrent
+```
+
+To keep `grunt.loadNpmTasks('grunt-concurrent')` (and `load-grunt-tasks`) working unchanged, install it under the original name:
+
+```json
+"grunt-concurrent": "npm:@unabandoned/grunt-concurrent@^3.1.0"
 ```
 
 ## Usage
