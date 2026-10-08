@@ -1,5 +1,4 @@
 'use strict';
-const supportsColor = require('supports-color');
 
 module.exports = grunt => {
 	grunt.initConfig({
@@ -24,8 +23,21 @@ module.exports = grunt => {
 					logConcurrentOutput: true
 				},
 				tasks: [
-					'nodemon',
-					'watch'
+					'testIndent',
+					'testMultiline'
+				]
+			},
+			fail: [
+				'test1',
+				'testFail'
+			],
+			limited: {
+				options: {
+					limit: 1
+				},
+				tasks: [
+					'test2',
+					'test3'
 				]
 			},
 			colors: [
@@ -59,44 +71,10 @@ module.exports = grunt => {
 			indentDefault: [
 				'testIndent'
 			]
-		},
-		simplemocha: {
-			test: {
-				src: 'test/*.js',
-				options: {
-					timeout: 6000
-				}
-			}
-		},
-		clean: {
-			test: [
-				'test/tmp'
-			]
-		},
-		watch: {
-			scripts: {
-				files: [
-					'tasks/*.js'
-				],
-				tasks: [
-					'default'
-				]
-			}
-		},
-		nodemon: {
-			dev: {
-				options: {
-					file: 'test/fixtures/server.js'
-				}
-			}
 		}
 	});
 
 	grunt.loadTasks('tasks');
-	grunt.loadNpmTasks('grunt-contrib-clean');
-	grunt.loadNpmTasks('grunt-contrib-watch');
-	grunt.loadNpmTasks('grunt-simple-mocha');
-	grunt.loadNpmTasks('grunt-nodemon');
 
 	grunt.registerTask('test1', () => {
 		console.log('test1');
@@ -144,9 +122,19 @@ module.exports = grunt => {
 	});
 
 	grunt.registerTask('colorcheck', () => {
-		// Writes 'true' or 'false' to the file
-		const supports = String(Boolean(supportsColor.stdout));
-		grunt.file.write('test/tmp/colors', supports);
+		// Writes 'true' or 'false' to the file, using the same flag checks
+		// supports-color makes
+		const flags = grunt.option.flags();
+		const supports = flags.includes('--color') && !flags.some(flag => /^--no-colou?rs?$|^--colou?r=false$/.test(flag));
+		grunt.file.write('test/tmp/colors', String(supports));
+	});
+
+	grunt.registerTask('testMultiline', () => {
+		console.log('line one\n\nline three');
+	});
+
+	grunt.registerTask('testFail', () => {
+		grunt.fail.warn('testFail failed on purpose');
 	});
 
 	grunt.registerTask('testIndent', () => {
@@ -154,11 +142,8 @@ module.exports = grunt => {
 	});
 
 	grunt.registerTask('default', [
-		'clean',
 		'concurrent:test',
-		'concurrent:testSequence',
-		'simplemocha',
-		'clean'
+		'concurrent:testSequence'
 	]);
 };
 
